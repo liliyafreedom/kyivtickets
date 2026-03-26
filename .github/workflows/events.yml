@@ -1,0 +1,44 @@
+name: Kyiv Events Monitor 🎭
+
+on:
+  schedule:
+    # Кожен день о 9:00 ранку (Київ = UTC+3, тому 06:00 UTC)
+    - cron: '0 6 * * *'
+  # Також можна запустити вручну
+  workflow_dispatch:
+
+jobs:
+  check-events:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Завантажити код
+        uses: actions/checkout@v4
+
+      # Зберігаємо seen_events.json між запусками
+      - name: Відновити кеш побачених подій
+        uses: actions/cache@v4
+        with:
+          path: seen_events.json
+          key: seen-events-cache
+
+      - name: Встановити Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Встановити бібліотеки
+        run: pip install requests beautifulsoup4 lxml
+
+      - name: Запустити скрипт
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scraper.py
+
+      - name: Зберегти результати як артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: events-${{ github.run_number }}
+          path: all_events_may2026.json
+          retention-days: 30
