@@ -17,19 +17,35 @@ HEADERS = {
     "Referer": "https://google.com",
 }
 
+MAY_KEYWORDS = ["may", "трав", " 05 ", ".05.", "/05/", "05/2026",
+                 "16 may", "17 may", "30 may", "01 may", "02 may",
+                 "03 may", "04 may", "05 may", "06 may", "07 may",
+                 "08 may", "09 may", "10 may", "11 may", "12 may",
+                 "13 may", "14 may", "15 may", "18 may", "19 may",
+                 "20 may", "21 may", "22 may", "23 may", "24 may",
+                 "25 may", "26 may", "27 may", "28 may", "29 may", "31 may"]
+
+def is_may_event(date_str):
+    if not date_str:
+        return True  # якщо дата невідома — включаємо
+    d = date_str.lower()
+    return any(k in d for k in MAY_KEYWORDS)
+
 # ═══════════════════════════════════════════════════════════
 # КАТЕГОРИЗАЦІЯ
 # ═══════════════════════════════════════════════════════════
 
 CATEGORY_MAP = {
-    "🎵 Концерт":          ["концерт", "музик", "джаз", "рок", "поп", "реп", "live", "виступ", "тур", "гурт", "симфон", "органн", "філармон", "orchestra", "concert"],
-    "🎭 Театр / Вистава":  ["театр", "вистав", "спектакл", "опер", "балет", "мюзикл", "прем'єр", "драм", "comedy play", "performance", "show"],
-    "🎤 Стендап / Зйомка": ["зйомк", "стендап", "stand-up", "гумор", "квартал", "дизель", "розгон", "comedy"],
-    "🎪 Фестиваль":        ["фестивал", "fest", "festival", "open-air", "опенейр"],
-    "🖼 Виставка":         ["виставк", "галере", "музей", "exposition", "exhibition", "expo"],
-    "🎬 Шоу / Кіно":       ["шоу", "show", "кіно", "фільм", "цирк", "circus"],
-    "👶 Дітям":            ["дітям", "дитяч", "казк", "ляльк", "puppet", "children"],
-    "🏃 Спорт":            ["марафон", "забіг", "spartan", "спорт", "турнір", "змаган"],
+    "🎵 Концерт":          ["концерт", "concert", "музик", "джаз", "jazz", "рок", "rock", "поп", "реп", "rap", "live", "виступ", "тур", "гурт", "симфон", "symphony", "органн", "філармон", "philharmon", "бумбокс", "dzidzio", "onuka", "sadsvit", "tik tu", "jerry heil", "vivienne"],
+    "🎭 Театр / Вистава":  ["театр", "theatre", "theater", "вистав", "спектакл", "опер", "opera", "балет", "ballet", "мюзикл", "musical", "прем'єр", "драм", "drama", "dakh daughters", "перформанс", "performance"],
+    "🎤 Стендап / Зйомка": ["зйомк", "стендап", "stand-up", "standup", "гумор", "humor", "comedy", "квартал", "дизель", "розгон", "business stand up"],
+    "🎪 Фестиваль":        ["фестивал", "fest", "festival", "open-air", "опенейр", "форум культ"],
+    "🖼 Виставка / Форум": ["виставк", "exhibition", "expo", "форум", "forum", "конгрес", "конференц", "congress"],
+    "🎬 Шоу":              ["шоу", "show", "цирк", "circus", "magic", "магія"],
+    "👶 Дітям":            ["дітям", "дитяч", "children", "kids", "казк", "ляльк", "puppet"],
+    "🏃 Спорт / Забіг":    ["марафон", "marathon", "забіг", "spartan", "спорт", "sport", "турнір", "трейл", "trail", "race", "run"],
+    "💃 Танці / Вечірка":  ["танц", "dance", "party", "вечірк", "nightlife", "tango", "salsa", "bachata"],
+    "💼 Бізнес":           ["бізнес", "business", "it ", "tech", "dou ", "dev", "startup", "invest"],
 }
 
 def detect_category(title):
@@ -39,364 +55,223 @@ def detect_category(title):
             return cat
     return "📅 Подія"
 
-
 # ═══════════════════════════════════════════════════════════
-# ПАРСЕРИ — ТІЛЬКИ САЙТИ З СТАТИЧНИМ HTML
+# ПАРСЕРИ
 # ═══════════════════════════════════════════════════════════
 
-def scrape_allevents():
-    """allevents.in — агрегатор з статичним HTML, парсить Facebook Events та інші"""
+def scrape_allevents_category(url, label):
     events = []
-    urls = [
-        "https://allevents.in/kiev-ua/all#",
-        "https://allevents.in/kiev-ua/concerts",
-        "https://allevents.in/kiev-ua/theatre",
-        "https://allevents.in/kiev-ua/comedy",
-        "https://allevents.in/kiev-ua/festivals",
-        "https://allevents.in/kiev-ua/art",
-    ]
     try:
         s = requests.Session()
         s.headers.update(HEADERS)
-        for url in urls:
+        r = s.get(url, timeout=25)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Точні селектори allevents.in з реального HTML
+        for item in soup.select("li"):
+            link_el = item.select_one("a[href*='/kiev/']")
+            if not link_el:
+                continue
+            title = link_el.get_text(strip=True)
+            if len(title) < 3 or len(title) > 200:
+                continue
+            # Пропускаємо технічні елементи
+            if any(x in title.lower() for x in ["sign in", "login", "create event", "allevents", "open app"]):
+                continue
+
+            # Дата — шукаємо текст поруч
+            date = ""
+            parent = link_el.parent
+            for _ in range(3):
+                if parent:
+                    date_candidate = parent.get_text(" ", strip=True)
+                    # Шукаємо дату у форматі "Sat, 16 May, 2026"
+                    import re
+                    match = re.search(r'(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+\d{1,2}\s+\w+,?\s+\d{4}', date_candidate)
+                    if match:
+                        date = match.group(0)
+                        break
+                    match = re.search(r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}', date_candidate)
+                    if match:
+                        date = match.group(0)
+                        break
+                    parent = parent.parent
+
+            # Місце проведення
+            venue = ""
+            if item.select_one("p, [class*='venue'], [class*='location']"):
+                venue_el = item.select_one("p, [class*='venue'], [class*='location']")
+                venue_text = venue_el.get_text(strip=True) if venue_el else ""
+                if len(venue_text) < 80:
+                    venue = venue_text
+
+            href = link_el.get("href", "")
+            link = href if href.startswith("http") else "https://allevents.in" + href
+
+            # Фільтруємо тільки травень або невідому дату
+            if date and not is_may_event(date):
+                continue
+
+            events.append({
+                "title": title,
+                "date": date,
+                "venue": venue,
+                "price": "",
+                "link": link,
+                "source": f"allevents.in ({label})",
+                "category": detect_category(title),
+            })
+    except Exception as e:
+        print(f"  allevents {label}: {e}")
+    return events
+
+
+def scrape_allevents_all():
+    """Парсить усі категорії allevents.in"""
+    all_events = []
+    categories = [
+        ("all",          "https://allevents.in/kiev-ua/all"),
+        ("concerts",     "https://allevents.in/kiev-ua/concerts"),
+        ("music",        "https://allevents.in/kiev-ua/music"),
+        ("theatre",      "https://allevents.in/kiev-ua/theatre"),
+        ("performances", "https://allevents.in/kiev-ua/performances"),
+        ("comedy",       "https://allevents.in/kiev-ua/comedy"),
+        ("festivals",    "https://allevents.in/kiev-ua/festivals"),
+        ("art",          "https://allevents.in/kiev-ua/art"),
+        ("dance",        "https://allevents.in/kiev-ua/dance"),
+        ("kids",         "https://allevents.in/kiev-ua/kids"),
+        ("exhibitions",  "https://allevents.in/kiev-ua/exhibitions"),
+        ("sports",       "https://allevents.in/kiev-ua/sports"),
+    ]
+    for label, url in categories:
+        found = scrape_allevents_category(url, label)
+        print(f"     allevents/{label}: {len(found)}")
+        all_events.extend(found)
+        time.sleep(1)
+    return all_events
+
+
+def scrape_ticketsbox():
+    events = []
+    try:
+        s = requests.Session()
+        s.headers.update(HEADERS)
+        for url in ["https://kyiv.ticketsbox.com/may/", "https://kyiv.ticketsbox.com/"]:
             r = s.get(url, timeout=20)
             soup = BeautifulSoup(r.text, "html.parser")
-            for item in soup.select(".event-item, .event-card, [class*='event'], article, li.item")[:40]:
+            for item in soup.select(".event-item, .b-events__item, article, [class*='event'], li.item, .item")[:80]:
                 title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
-                date_el  = item.select_one("time, [class*='date'], [class*='time']")
+                date_el  = item.select_one("time, [class*='date']")
                 link_el  = item.select_one("a[href]")
+                price_el = item.select_one("[class*='price']")
                 if not title_el: continue
                 title = title_el.get_text(strip=True)
-                if len(title) < 3: continue
+                if len(title) < 3 or len(title) > 200: continue
                 date = date_el.get_text(strip=True)[:40] if date_el else ""
-                # Фільтр по травню
-                if date and not any(x in date.lower() for x in ["may", "трав", "05/", "/05", "05."]):
-                    if "2026" not in date and date:
-                        continue
-                href = link_el["href"] if link_el else url
-                link = href if href.startswith("http") else "https://allevents.in" + href
-                events.append({"title": title, "date": date, "price": "",
-                                "link": link, "source": "allevents.in",
-                                "category": detect_category(title)})
-            time.sleep(0.5)
+                price = price_el.get_text(strip=True)[:25] if price_el else ""
+                href = link_el["href"] if link_el else ""
+                link = ("https://kyiv.ticketsbox.com" + href) if href.startswith("/") else href or "https://kyiv.ticketsbox.com"
+                events.append({"title": title, "date": date, "price": price, "venue": "",
+                                "link": link, "source": "ticketsbox.com", "category": detect_category(title)})
+            if events: break
     except Exception as e:
-        print(f"  allevents.in: {e}")
+        print(f"  ticketsbox: {e}")
     return events
 
 
-def scrape_eventbrite():
-    """Eventbrite — великий міжнародний агрегатор"""
+def scrape_origin_stage():
     events = []
-    urls = [
-        "https://www.eventbrite.com/d/ukraine--kyiv/events--in-may-2026/",
-        "https://www.eventbrite.com/d/ukraine--kyiv/concerts--in-may-2026/",
-        "https://www.eventbrite.com/d/ukraine--kyiv/performing-arts--in-may-2026/",
-    ]
     try:
         s = requests.Session()
         s.headers.update(HEADERS)
-        for url in urls:
-            r = s.get(url, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
-            for item in soup.select("[data-testid='event-card'], .eds-event-card, article, [class*='event-card']")[:30]:
-                title_el = item.select_one("h3, h2, [class*='title'], [data-testid='event-card-title']")
-                date_el  = item.select_one("time, [class*='date'], [data-testid*='date']")
-                link_el  = item.select_one("a[href]")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3: continue
-                date = date_el.get_text(strip=True)[:40] if date_el else ""
-                href = link_el["href"] if link_el else url
-                link = href if href.startswith("http") else "https://www.eventbrite.com" + href
-                events.append({"title": title, "date": date, "price": "",
-                                "link": link, "source": "eventbrite.com",
-                                "category": detect_category(title)})
-            time.sleep(0.5)
+        r = s.get("https://originstage.com.ua/events/", timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
+        for item in soup.select("article, .event, [class*='event'], [class*='show'], li, [class*='card']")[:50]:
+            title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
+            date_el  = item.select_one("time, [class*='date']")
+            link_el  = item.select_one("a[href]")
+            if not title_el: continue
+            title = title_el.get_text(strip=True)
+            if len(title) < 3: continue
+            date = date_el.get_text(strip=True)[:40] if date_el else ""
+            href = link_el["href"] if link_el else ""
+            link = ("https://originstage.com.ua" + href) if href.startswith("/") else href or "https://originstage.com.ua"
+            events.append({"title": title, "date": date, "price": "", "venue": "ORIGIN STAGE",
+                            "link": link, "source": "ORIGIN STAGE", "category": detect_category(title)})
     except Exception as e:
-        print(f"  eventbrite: {e}")
+        print(f"  originstage: {e}")
     return events
 
 
-def scrape_kyiv_opera():
-    """Опера Шевченка — офіційний сайт, статичний HTML"""
+def scrape_opera():
     events = []
     try:
         s = requests.Session()
         s.headers.update(HEADERS)
         r = s.get("https://opera.com.ua/afisha", timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.select(".b-afisha__item, .afisha-item, [class*='afisha'], [class*='performance'], article, li")[:50]:
+        for item in soup.select(".b-afisha__item, [class*='afisha'], [class*='performance'], article, li, [class*='item']")[:60]:
             title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
             date_el  = item.select_one("time, [class*='date'], [class*='day']")
             link_el  = item.select_one("a[href]")
             if not title_el: continue
             title = title_el.get_text(strip=True)
             if len(title) < 3 or len(title) > 150: continue
-            date = date_el.get_text(strip=True)[:30] if date_el else ""
+            date = date_el.get_text(strip=True)[:40] if date_el else ""
             href = link_el["href"] if link_el else ""
             link = ("https://opera.com.ua" + href) if href.startswith("/") else href or "https://opera.com.ua/afisha"
-            events.append({"title": title, "date": date, "price": "",
-                            "link": link, "source": "opera.com.ua (Опера Шевченка)",
-                            "category": "🎭 Театр / Вистава"})
+            events.append({"title": title, "date": date, "price": "", "venue": "Опера Шевченка",
+                            "link": link, "source": "opera.com.ua", "category": "🎭 Театр / Вистава"})
     except Exception as e:
-        print(f"  opera.com.ua: {e}")
+        print(f"  opera: {e}")
     return events
 
 
-def scrape_molody_theatre():
-    """Молодий театр"""
+def scrape_molody():
     events = []
     try:
         s = requests.Session()
         s.headers.update(HEADERS)
         r = s.get("https://molodyytheatre.com/afisha", timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.select("article, .performance, .event, [class*='afisha'], li, [class*='item']")[:50]:
+        for item in soup.select("article, .performance, [class*='afisha'], [class*='event'], li, [class*='item']")[:60]:
             title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
             date_el  = item.select_one("time, [class*='date']")
             link_el  = item.select_one("a[href]")
             if not title_el: continue
             title = title_el.get_text(strip=True)
             if len(title) < 3 or len(title) > 150: continue
-            date = date_el.get_text(strip=True)[:30] if date_el else ""
+            date = date_el.get_text(strip=True)[:40] if date_el else ""
             href = link_el["href"] if link_el else ""
-            link = ("https://molodyytheatre.com" + href) if href.startswith("/") else href or "https://molodyytheatre.com/afisha"
-            events.append({"title": title, "date": date, "price": "",
-                            "link": link, "source": "molodyytheatre.com",
-                            "category": "🎭 Театр / Вистава"})
+            link = ("https://molodyytheatre.com" + href) if href.startswith("/") else href or "https://molodyytheatre.com"
+            events.append({"title": title, "date": date, "price": "", "venue": "Молодий театр",
+                            "link": link, "source": "molodyytheatre.com", "category": "🎭 Театр / Вистава"})
     except Exception as e:
-        print(f"  molodyytheatre.com: {e}")
+        print(f"  molody: {e}")
     return events
 
 
-def scrape_ticketsbox_api():
-    """TicketsBox — спробуємо їхній JSON endpoint"""
-    events = []
-    try:
-        s = requests.Session()
-        s.headers.update({**HEADERS, "Accept": "application/json"})
-        # Пробуємо різні API endpoints
-        api_urls = [
-            "https://kyiv.ticketsbox.com/api/events?month=5&year=2026&per_page=100",
-            "https://kyiv.ticketsbox.com/api/v1/events?city=kyiv&date_from=2026-05-01&date_to=2026-05-31",
-            "https://api.ticketsbox.com/events?city=kyiv&from=2026-05-01&to=2026-05-31",
-        ]
-        for api_url in api_urls:
-            try:
-                r = s.get(api_url, timeout=15)
-                if r.status_code == 200 and "json" in r.headers.get("content-type", ""):
-                    data = r.json()
-                    items = data if isinstance(data, list) else data.get("data", data.get("events", []))
-                    for item in items[:100]:
-                        title = item.get("title") or item.get("name", "")
-                        date  = str(item.get("date") or item.get("start_date", ""))[:30]
-                        link  = item.get("url") or item.get("link", "https://kyiv.ticketsbox.com")
-                        price = str(item.get("min_price") or item.get("price", ""))
-                        if title and len(title) > 2:
-                            events.append({"title": title, "date": date, "price": price,
-                                            "link": link, "source": "ticketsbox.com",
-                                            "category": detect_category(title)})
-                    if events:
-                        break
-            except:
-                continue
-
-        # Fallback HTML
-        if not events:
-            s.headers.update(HEADERS)
-            for url in ["https://kyiv.ticketsbox.com/may/", "https://kyiv.ticketsbox.com/"]:
-                r = s.get(url, timeout=20)
-                soup = BeautifulSoup(r.text, "html.parser")
-                for item in soup.select(".event-item, .b-events__item, [class*='event'], article, .item")[:60]:
-                    title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
-                    date_el  = item.select_one("time, [class*='date']")
-                    link_el  = item.select_one("a[href]")
-                    if not title_el: continue
-                    title = title_el.get_text(strip=True)
-                    if len(title) < 3: continue
-                    date = date_el.get_text(strip=True)[:30] if date_el else ""
-                    href = link_el["href"] if link_el else ""
-                    link = ("https://kyiv.ticketsbox.com" + href) if href.startswith("/") else href or "https://kyiv.ticketsbox.com"
-                    price_el = item.select_one("[class*='price']")
-                    price = price_el.get_text(strip=True)[:20] if price_el else ""
-                    events.append({"title": title, "date": date, "price": price,
-                                    "link": link, "source": "ticketsbox.com",
-                                    "category": detect_category(title)})
-    except Exception as e:
-        print(f"  ticketsbox: {e}")
-    return events
-
-
-def scrape_karabas_may():
-    """Karabas — пряма сторінка травня"""
-    events = []
-    try:
-        s = requests.Session()
-        s.headers.update(HEADERS)
-        for url in [
-            "https://kyiv.karabas.com/may/",
-            "https://karabas.com/ua/kyiv/may/",
-        ]:
-            r = s.get(url, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
-            # Karabas використовує специфічні класи
-            for item in soup.select(".b-event-tile, .event-tile, .event__item, [class*='EventTile'], [class*='event-tile'], [class*='poster']")[:80]:
-                title_el = item.select_one("h3, h2, h4, .event-tile__title, [class*='title']")
-                date_el  = item.select_one(".event-tile__date, [class*='date'], time")
-                link_el  = item.select_one("a[href]")
-                price_el = item.select_one("[class*='price']")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3: continue
-                date = date_el.get_text(strip=True)[:30] if date_el else ""
-                price = price_el.get_text(strip=True)[:20] if price_el else ""
-                href = link_el["href"] if link_el else ""
-                link = ("https://kyiv.karabas.com" + href) if href.startswith("/") else href or "https://kyiv.karabas.com"
-                events.append({"title": title, "date": date, "price": price,
-                                "link": link, "source": "karabas.com",
-                                "category": detect_category(title)})
-            if events:
-                break
-    except Exception as e:
-        print(f"  karabas: {e}")
-    return events
-
-
-def scrape_origin_stage():
-    """ORIGIN STAGE — популярний майданчик"""
-    events = []
-    try:
-        s = requests.Session()
-        s.headers.update(HEADERS)
-        for url in ["https://originstage.com.ua/events/", "https://originstage.com.ua/"]:
-            r = s.get(url, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
-            for item in soup.select("article, .event, [class*='event'], [class*='show'], li")[:40]:
-                title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
-                date_el  = item.select_one("time, [class*='date']")
-                link_el  = item.select_one("a[href]")
-                if not title_el: continue
-                title = title_el.get_text(strip=True)
-                if len(title) < 3: continue
-                date = date_el.get_text(strip=True)[:30] if date_el else ""
-                href = link_el["href"] if link_el else ""
-                link = ("https://originstage.com.ua" + href) if href.startswith("/") else href or "https://originstage.com.ua"
-                events.append({"title": title, "date": date, "price": "",
-                                "link": link, "source": "ORIGIN STAGE",
-                                "category": detect_category(title)})
-            if events: break
-    except Exception as e:
-        print(f"  originstage: {e}")
-    return events
-
-
-def scrape_kontramarka_may():
-    """Kontramarka — сторінка травня"""
-    events = []
-    try:
-        s = requests.Session()
-        s.headers.update(HEADERS)
-        r = s.get("https://kontramarka.ua/uk/kyiv/?month=5&year=2026", timeout=20)
-        soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.select(".event-card, .b-event, [class*='EventCard'], [class*='event'], article")[:80]:
-            title_el = item.select_one("h3, h2, h4, [class*='title'], [class*='name']")
-            date_el  = item.select_one("time, [class*='date']")
-            link_el  = item.select_one("a[href]")
-            price_el = item.select_one("[class*='price']")
-            if not title_el: continue
-            title = title_el.get_text(strip=True)
-            if len(title) < 3: continue
-            date = date_el.get_text(strip=True)[:30] if date_el else ""
-            price = price_el.get_text(strip=True)[:20] if price_el else ""
-            href = link_el["href"] if link_el else ""
-            link = ("https://kontramarka.ua" + href) if href.startswith("/") else href or "https://kontramarka.ua"
-            events.append({"title": title, "date": date, "price": price,
-                            "link": link, "source": "kontramarka.ua",
-                            "category": detect_category(title)})
-    except Exception as e:
-        print(f"  kontramarka: {e}")
-    return events
-
-
-def scrape_concert_ua_rss():
-    """Concert.ua — пробуємо RSS або sitemap"""
-    events = []
-    try:
-        s = requests.Session()
-        s.headers.update(HEADERS)
-        # Concert.ua має XML sitemap з подіями
-        for url in [
-            "https://concert.ua/sitemap_events.xml",
-            "https://concert.ua/rss/events/kyiv",
-            "https://concert.ua/ua/catalog/kyiv/all-categories.json",
-        ]:
-            try:
-                r = s.get(url, timeout=15)
-                if r.status_code != 200:
-                    continue
-                ct = r.headers.get("content-type", "")
-                if "xml" in ct:
-                    soup = BeautifulSoup(r.text, "xml")
-                    for item in soup.select("item, url")[:200]:
-                        title_el = item.find("title")
-                        link_el  = item.find("link") or item.find("loc")
-                        date_el  = item.find("pubDate") or item.find("lastmod")
-                        if not title_el: continue
-                        title = title_el.get_text(strip=True)
-                        if "kyiv" not in title.lower() and "київ" not in title.lower():
-                            loc = link_el.get_text() if link_el else ""
-                            if "kyiv" not in loc.lower():
-                                continue
-                        date = date_el.get_text(strip=True)[:30] if date_el else ""
-                        link = link_el.get_text(strip=True) if link_el else "https://concert.ua"
-                        if len(title) > 3:
-                            events.append({"title": title, "date": date, "price": "",
-                                            "link": link, "source": "concert.ua",
-                                            "category": detect_category(title)})
-                    if events: break
-                elif "json" in ct:
-                    data = r.json()
-                    items = data if isinstance(data, list) else data.get("data", data.get("events", []))
-                    for item in items:
-                        title = item.get("title") or item.get("name", "")
-                        if title and len(title) > 2:
-                            events.append({"title": title,
-                                            "date": str(item.get("date", ""))[:30],
-                                            "price": str(item.get("min_price", "")),
-                                            "link": item.get("url", "https://concert.ua"),
-                                            "source": "concert.ua",
-                                            "category": detect_category(title)})
-                    if events: break
-            except:
-                continue
-    except Exception as e:
-        print(f"  concert.ua rss/xml: {e}")
-    return events
-
-
-def scrape_kyiv_city_events():
-    """Офіційний сайт Києва — міські події"""
+def scrape_kyivcity():
     events = []
     try:
         s = requests.Session()
         s.headers.update(HEADERS)
         r = s.get("https://kyivcity.gov.ua/news/category/events/", timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.select("article, .news-item, [class*='event'], [class*='news'], li.item")[:30]:
+        for item in soup.select("article, .news-item, [class*='event'], [class*='news'], li")[:30]:
             title_el = item.select_one("h3, h2, h4, [class*='title']")
             date_el  = item.select_one("time, [class*='date']")
             link_el  = item.select_one("a[href]")
             if not title_el: continue
             title = title_el.get_text(strip=True)
             if len(title) < 3: continue
-            date = date_el.get_text(strip=True)[:30] if date_el else ""
+            date = date_el.get_text(strip=True)[:40] if date_el else ""
             href = link_el["href"] if link_el else ""
             link = ("https://kyivcity.gov.ua" + href) if href.startswith("/") else href or "https://kyivcity.gov.ua"
-            events.append({"title": title, "date": date, "price": "безкоштовно",
-                            "link": link, "source": "kyivcity.gov.ua",
-                            "category": detect_category(title)})
+            events.append({"title": title, "date": date, "price": "🆓 безкоштовно", "venue": "",
+                            "link": link, "source": "kyivcity.gov.ua", "category": detect_category(title)})
     except Exception as e:
-        print(f"  kyivcity.gov.ua: {e}")
+        print(f"  kyivcity: {e}")
     return events
 
 
@@ -423,20 +298,16 @@ def send_telegram(message):
 
 def send_long(text):
     max_len = 3800
-    parts = []
     while len(text) > max_len:
         cut = text.rfind("\n", 0, max_len)
         if cut == -1: cut = max_len
-        parts.append(text[:cut])
+        send_telegram(text[:cut])
         text = text[cut:]
-    parts.append(text)
-    for part in parts:
-        send_telegram(part)
         time.sleep(0.5)
-
+    send_telegram(text)
 
 # ═══════════════════════════════════════════════════════════
-# ДЕДУБЛІКАЦІЯ + ЗБЕРЕЖЕННЯ
+# ДЕДУБЛІКАЦІЯ
 # ═══════════════════════════════════════════════════════════
 
 def event_id(e):
@@ -460,17 +331,16 @@ def save_seen(seen):
     with open(SEEN_FILE, "w") as f:
         json.dump(list(seen), f)
 
-
 # ═══════════════════════════════════════════════════════════
 # ФОРМАТУВАННЯ
 # ═══════════════════════════════════════════════════════════
 
 def format_stats(stats, total):
-    lines = ["📊 <b>Статистика збору — Київ травень 2026</b>\n"]
+    lines = ["📊 <b>Статистика — Київ травень 2026</b>\n"]
     for name, count in sorted(stats.items(), key=lambda x: -x[1]):
         icon = "✅" if count > 0 else "⚠️"
         lines.append(f"{icon} {name}: <b>{count}</b>")
-    lines.append(f"\n📦 Разом унікальних: <b>{total}</b>")
+    lines.append(f"\n📦 Унікальних подій: <b>{total}</b>")
     lines.append(f"⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     return "\n".join(lines)
 
@@ -480,18 +350,20 @@ def format_full(events, new_ids):
         by_cat.setdefault(e["category"], []).append(e)
 
     lines = [f"📋 <b>УСІ події — Київ, травень 2026</b>",
-             f"Всього: <b>{len(events)}</b> подій\n"]
+             f"Всього: <b>{len(events)}</b>\n"]
     for cat in sorted(by_cat):
         evts = by_cat[cat]
         lines.append(f"\n{cat} — {len(evts)} шт.")
         for e in evts:
             is_new = "🆕 " if event_id(e) in new_ids else ""
             t = e["title"][:55] + ("…" if len(e["title"]) > 55 else "")
-            d = e["date"][:20] if e.get("date") and e["date"] not in ("", "травень 2026") else ""
-            p = f" · {e['price'][:15]}" if e.get("price") else ""
-            suffix = f"\n  📆 {d}{p}" if d or p else ""
+            d = e.get("date", "")[:25]
+            v = e.get("venue", "")[:30]
+            p = e.get("price", "")[:20]
+            details = " · ".join(filter(None, [d, v, p]))
+            suffix = f"\n  📆 {details}" if details else ""
             lines.append(f"{is_new}• <a href='{e['link']}'>{t}</a>{suffix}")
-    lines.append(f"\n🆕 = з'явилось сьогодні  |  ⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    lines.append(f"\n🆕 = нова  |  ⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     return "\n".join(lines)
 
 def format_new(new_events):
@@ -505,13 +377,13 @@ def format_new(new_events):
         lines.append(f"\n{cat}")
         for e in by_cat[cat]:
             t = e["title"][:55] + ("…" if len(e["title"]) > 55 else "")
-            d = e["date"][:20] if e.get("date") else ""
-            p = f" · {e['price'][:15]}" if e.get("price") else ""
-            suffix = f"\n  📆 {d}{p}" if d or p else ""
+            d = e.get("date", "")[:25]
+            v = e.get("venue", "")[:30]
+            details = " · ".join(filter(None, [d, v]))
+            suffix = f"\n  📆 {details}" if details else ""
             lines.append(f"• <a href='{e['link']}'>{t}</a>{suffix}")
     lines.append(f"\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     return "\n".join(lines)
-
 
 # ═══════════════════════════════════════════════════════════
 # ГОЛОВНА
@@ -522,29 +394,30 @@ def main():
     print(f"  Kyiv Events Monitor — {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     print(f"{'='*55}\n")
 
-    scrapers = [
-        ("allevents.in",       scrape_allevents),
-        ("eventbrite.com",     scrape_eventbrite),
-        ("ticketsbox.com",     scrape_ticketsbox_api),
-        ("karabas.com",        scrape_karabas_may),
-        ("kontramarka.ua",     scrape_kontramarka_may),
-        ("concert.ua",         scrape_concert_ua_rss),
-        ("originstage.com.ua", scrape_origin_stage),
-        ("opera.com.ua",       scrape_kyiv_opera),
-        ("molodyytheatre.com", scrape_molody_theatre),
-        ("kyivcity.gov.ua",    scrape_kyiv_city_events),
-    ]
-
     all_raw = []
     stats = {}
 
-    for name, fn in scrapers:
-        print(f"  → {name}...")
+    # 1. Головне джерело — allevents.in (всі категорії)
+    print("→ allevents.in (всі категорії)...")
+    ae_events = scrape_allevents_all()
+    stats["allevents.in"] = len(ae_events)
+    all_raw.extend(ae_events)
+
+    # 2. Інші джерела
+    other_scrapers = [
+        ("ticketsbox.com",     scrape_ticketsbox),
+        ("originstage.com.ua", scrape_origin_stage),
+        ("opera.com.ua",       scrape_opera),
+        ("molodyytheatre.com", scrape_molody),
+        ("kyivcity.gov.ua",    scrape_kyivcity),
+    ]
+    for name, fn in other_scrapers:
+        print(f"→ {name}...")
         found = fn()
-        print(f"     {len(found)} подій")
+        print(f"   {len(found)} подій")
         stats[name] = len(found)
         all_raw.extend(found)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
     all_events = deduplicate(all_raw)
     print(f"\n✔ Всього: {len(all_raw)} → унікальних: {len(all_events)}")
@@ -563,7 +436,7 @@ def main():
     print(f"🆕 Нових: {len(new_events)}")
 
     if not all_events:
-        send_telegram(f"⚠️ Жодного результату — сайти недоступні.\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+        send_telegram(f"⚠️ Жодного результату.\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
         return
 
     send_telegram(format_stats(stats, len(all_events)))
@@ -580,7 +453,6 @@ def main():
         send_telegram(f"✅ Нових подій сьогодні не додалось.\n⏰ {datetime.now().strftime('%d.%m.%Y %H:%M')}")
 
     print("✅ Готово!")
-
 
 if __name__ == "__main__":
     main()
